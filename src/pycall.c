@@ -1,12 +1,12 @@
 /*
 Copyright 2015-2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
-Licensed under the Amazon Software License (the "License"). 
+Licensed under the Amazon Software License (the "License").
 You may not use this file except in compliance with the License. A copy of the License is located at
 
     http://aws.amazon.com/asl/
 
-or in the "license" file accompanying this file. 
+or in the "license" file accompanying this file.
 This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, express or implied. See the License for the specific language governing permissions and limitations under the License.
 */
 
@@ -18,7 +18,7 @@ This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS O
 #include "bouncer.h"
 #include <usual/pgutil.h>
 
-char *pycall(PgSocket *client, char *username, char *query_str, char *py_file,
+char *pycall(PgSocket *client, char *username, char *query_str, long int xact_start, long int query_start, char *py_file,
 		char* py_function) {
 	PyObject *pName = NULL, *pModule = NULL, *pFunc = NULL;
 	PyObject *pArgs = NULL, *pValue = NULL;
@@ -26,7 +26,7 @@ char *pycall(PgSocket *client, char *username, char *query_str, char *py_file,
 	char *py_pathtmp, *py_filetmp, *py_path, *py_module, *ext;
 	char *res = NULL;
 
-        /* setup python search path */
+	/* setup python search path */
 	py_pathtmp = strdup(py_file);
 	if (py_pathtmp == NULL) {
 		slog_error(client, "out of memory");
@@ -55,8 +55,8 @@ char *pycall(PgSocket *client, char *username, char *query_str, char *py_file,
 		ext[0] = '\0';
 
         /* Initialize the Python interpreter
-         * NOTE: This call is a no-op on subsequent calls, as we do not 
-         * call PyFinalize(). This 
+         * NOTE: This call is a no-op on subsequent calls, as we do not
+         * call PyFinalize(). This
          * a) avoids the overhead of repeatedly reloading the interpreter
          * b) allows the use of global variables for persisting data in the
          *    routing / rewriting functions between calls.
@@ -89,24 +89,36 @@ char *pycall(PgSocket *client, char *username, char *query_str, char *py_file,
 		goto finish;
 	}
 
-	/* Call function with two arguments - username and query_str */
-	pArgs = PyTuple_New(2);
+	/* Call function with Four arguments - username、query_str、 xact_start and query_start*/
+	pArgs = PyTuple_New(4);
 	if (pArgs == NULL) {
-		slog_error(client, "Python module <%s>: out of memory", py_module);
-		goto finish;
+			slog_error(client, "Python module <%s>: out of memory", py_module);
+			goto finish;
 	}
 	pValue = PyString_FromString(username);
 	if (pValue == NULL) {
-		slog_error(client, "Python module <%s>: out of memory", py_module);
-		goto finish;
+			slog_error(client, "Python module <%s>: out of memory", py_module);
+			goto finish;
 	}
 	PyTuple_SetItem(pArgs, 0, pValue);
 	pValue = PyString_FromString(query_str);
 	if (pValue == NULL) {
-		slog_error(client, "Python module <%s>: out of memory", py_module);
-		goto finish;
+			slog_error(client, "Python module <%s>: out of memory", py_module);
+			goto finish;
 	}
 	PyTuple_SetItem(pArgs, 1, pValue);
+	pValue = PyInt_FromLong(xact_start);
+	if (pValue == NULL) {
+			slog_error(client, "Python module <%s>: out of memory", py_module);
+			goto finish;
+	}
+	PyTuple_SetItem(pArgs, 2, pValue);
+	pValue = PyInt_FromLong(query_start);
+	if (pValue == NULL) {
+			slog_error(client, "Python module <%s>: out of memory", py_module);
+			goto finish;
+	}
+	PyTuple_SetItem(pArgs, 3, pValue);
 	pValue = PyObject_CallObject(pFunc, pArgs);
 	if (pValue == NULL) {
 		slog_error(client, "Python Function <%s> failed to return a value",
